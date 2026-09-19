@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: video-vault
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/collector/config
+    autoDeploy: true
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: NODE_ENV
+        value: production
+      - key: TIKHUB_API_KEY
+        sync: false
+      - key: TIKHUB_RATE_LIMIT_MAX
+        value: "40"
+      - key: TIKHUB_RATE_LIMIT_WINDOW_MS
+        value: "600000"

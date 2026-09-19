@@ -184,6 +184,8 @@ let state = {
   saved: new Set(loadJSON(STORAGE_KEYS.saved, [])),
   settings: { ...defaultSettings, ...loadJSON(STORAGE_KEYS.settings, {}) },
   connection: { status: "idle", message: "尚未测试" },
+  serverKeyConfigured: false,
+  rateLimit: { max: 40, windowMinutes: 10 },
   linkResolve: {
     loading: false,
     text: "",
@@ -322,6 +324,24 @@ function applyTheme() {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute("content", resolved === "dark" ? "#0d0e0d" : "#f1f0ea");
+}
+
+async function loadServerConfig() {
+  try {
+    const response = await fetch("/api/collector/config", {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return;
+    const result = await response.json();
+    state.serverKeyConfigured = Boolean(result.serverKeyConfigured);
+    state.rateLimit = {
+      max: Number(result.rateLimitMax) || 40,
+      windowMinutes: Number(result.rateLimitWindowMinutes) || 10,
+    };
+    render();
+  } catch {
+    // Local static-only use can continue with Demo mode.
+  }
 }
 
 function getFilteredVideos() {
@@ -480,7 +500,8 @@ function renderTikHubSearchPanel() {
   const provider = state.settings.dataSource;
   const demo = provider === "demo";
   const showingDemo = state.search.demo && state.search.active;
-  const hasKey = Boolean(state.settings.tikhubApiKey.trim());
+  const hasUserKey = Boolean(state.settings.tikhubApiKey.trim());
+  const hasKey = hasUserKey || state.serverKeyConfigured;
   const platform = state.search.platform;
   const statusClass = state.search.error
     ? "is-error"
@@ -498,7 +519,9 @@ function renderTikHubSearchPanel() {
         : showingDemo
           ? "未配置 API Key，当前展示公开 Demo 结果"
         : hasKey
-          ? "TikHub API Key 已配置"
+          ? hasUserKey
+            ? "已使用浏览器中填写的 API Key"
+            : "站点共享 API Key 已配置"
           : "填写 API Key 后可搜索四个平台";
 
   return `
@@ -605,7 +628,9 @@ function renderTikHubSearchPanel() {
               : showingDemo
                 ? "当前是免 Key 回退结果，配置 API Key 后才会执行真实关键词搜索。"
               : hasKey
-                ? "搜索请求会消耗 TikHub 额度，是否收费以 TikHub 控制台为准。"
+                ? hasUserKey
+                  ? "当前使用你填写的 Key，搜索会消耗该账号的 TikHub 额度。"
+                  : `当前使用站点共享额度，每个 IP 每 ${state.rateLimit.windowMinutes} 分钟最多 ${state.rateLimit.max} 次请求。`
                 : `<a href="https://tikhub.io/" target="_blank" rel="noreferrer">前往 TikHub 获取 API Key</a>`
           }
         </span>
@@ -1160,8 +1185,11 @@ function renderSettings() {
             <div class="setting-row__copy">
               <span class="setting-row__label">TikHub API Key</span>
               <span class="setting-row__description">
-                新账号约有 50 次免费请求额度，
-                <a href="https://tikhub.io/" target="_blank" rel="noreferrer">前往 TikHub 获取</a>。
+                ${
+                  state.serverKeyConfigured
+                    ? "站点已配置共享 Key。留空即可使用共享额度；填写后将消耗你自己的账号额度。"
+                    : `新账号约有 50 次免费请求额度，<a href="https://tikhub.io/" target="_blank" rel="noreferrer">前往 TikHub 获取</a>。`
+                }
               </span>
             </div>
             <input
@@ -1171,7 +1199,7 @@ function renderSettings() {
               value="${escapeHTML(state.settings.tikhubApiKey)}"
               autocomplete="off"
               spellcheck="false"
-              placeholder="Bearer Token"
+              placeholder="可选，留空使用站点共享 Key"
             />
           </div>
           <div class="setting-row">
@@ -1597,7 +1625,7 @@ async function runApiSearch(options = {}) {
   const input = document.querySelector("#search-keyword");
   const keyword = String(options.keyword ?? input?.value ?? state.search.keyword ?? "").trim();
   const apiKey = state.settings.tikhubApiKey.trim();
-  const demoFallback = !demo && !apiKey;
+  const demoFallback = !demo && !apiKey && !state.serverKeyConfigured;
 
   if (!keyword) {
     input?.focus();
@@ -1694,7 +1722,7 @@ async function runShareResolve() {
     return;
   }
 
-  if (!apiKey) {
+  if (!apiKey && !state.serverKeyConfigured) {
     state.linkResolve = {
       loading: false,
       text,
@@ -1740,7 +1768,7 @@ async function hydrateVideoPlayback(videoId) {
   if (!video?.needsPlayback || video.source || video.playbackError || playbackRequests.has(videoId)) return;
 
   const apiKey = state.settings.tikhubApiKey.trim();
-  if (!apiKey) {
+  if (!apiKey && !state.serverKeyConfigured) {
     video.playbackError = "需要 TikHub API Key 才能解析哔哩哔哩播放地址";
     render();
     return;
@@ -1805,7 +1833,7 @@ function scheduleAutoCollection() {
     !state.settings.autoCollect ||
     provider === "demo" ||
     !keywords.length ||
-    (provider === "tikhub" && !state.settings.tikhubApiKey.trim())
+    (provider === "tikhub" && !state.settings.tikhubApiKey.trim() && !state.serverKeyConfigured)
   ) {
     return;
   }
@@ -2407,4 +2435,5 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 state.route = parseRoute();
 applyTheme();
 render();
+loadServerConfig();
 scheduleAutoCollection();

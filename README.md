@@ -30,6 +30,12 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 
 打开 `http://127.0.0.1:4173`。
 
+## 公网部署
+
+项目提供 `Dockerfile` 和 `render.yaml`，可以部署到 Render 等支持 Docker 的平台。部署时需要设置服务端环境变量 `TIKHUB_API_KEY`，所有访客会共享该 Key，后端默认按 IP 限流。
+
+详细步骤见 [DEPLOY.md](./DEPLOY.md)。
+
 ## 使用
 
 1. 在设置中选择 `TikHub API` 并填写 API Key。

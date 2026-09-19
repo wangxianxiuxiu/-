@@ -7,6 +7,56 @@ import {
 } from "./tikhub-provider.mjs";
 
 const COLLECTOR_TIMEOUT_MS = 12000;
+const rateLimitBuckets = new Map();
+
+function effectiveTikHubKey(candidate) {
+  return String(candidate || "").trim() || String(process.env.TIKHUB_API_KEY || "").trim();
+}
+
+function clientAddress(request) {
+  const forwarded = request.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) return forwarded.split(",")[0].trim();
+  return request.socket.remoteAddress || "unknown";
+}
+
+function enforceSharedRateLimit(request, response, usesServerKey) {
+  if (!usesServerKey || process.env.RATE_LIMIT_DISABLED === "true") return true;
+
+  const max = Math.max(Number(process.env.TIKHUB_RATE_LIMIT_MAX) || 40, 1);
+  const windowMs = Math.max(Number(process.env.TIKHUB_RATE_LIMIT_WINDOW_MS) || 10 * 60 * 1000, 1000);
+  const now = Date.now();
+
+  if (rateLimitBuckets.size > 5000) {
+    for (const [address, value] of rateLimitBuckets) {
+      if (value.resetAt <= now) rateLimitBuckets.delete(address);
+    }
+  }
+
+  const key = clientAddress(request);
+  const bucket = rateLimitBuckets.get(key);
+
+  if (!bucket || bucket.resetAt <= now) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+
+  if (bucket.count >= max) {
+    response.writeHead(429, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Retry-After": String(Math.ceil((bucket.resetAt - now) / 1000)),
+    });
+    response.end(
+      JSON.stringify({
+        error: `共享 API 额度已达到当前 IP 的上限，请在 ${Math.ceil((bucket.resetAt - now) / 60000)} 分钟后重试`,
+      }),
+    );
+    return false;
+  }
+
+  bucket.count += 1;
+  return true;
+}
 
 function sendJson(response, status, data) {
   response.writeHead(status, {
@@ -251,13 +301,27 @@ export async function handleCollectorRequest(request, response, url) {
       return true;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/collector/config") {
+      sendJson(response, 200, {
+        serverKeyConfigured: Boolean(String(process.env.TIKHUB_API_KEY || "").trim()),
+        rateLimitMax: Math.max(Number(process.env.TIKHUB_RATE_LIMIT_MAX) || 40, 1),
+        rateLimitWindowMinutes: Math.round(
+          Math.max(Number(process.env.TIKHUB_RATE_LIMIT_WINDOW_MS) || 10 * 60 * 1000, 1000) /
+            60000,
+        ),
+      });
+      return true;
+    }
+
     if (request.method === "GET" && url.pathname === "/api/collector/image") {
       await proxyImage(response, url.searchParams.get("url"));
       return true;
     }
 
     if (request.method === "GET" && url.pathname === "/api/collector/search/health") {
-      const apiKey = String(url.searchParams.get("key") || "").trim();
+      const candidateKey = String(url.searchParams.get("key") || "").trim();
+      const apiKey = effectiveTikHubKey(candidateKey);
+      if (!enforceSharedRateLimit(request, response, !candidateKey && Boolean(apiKey))) return true;
       const result = await checkTikHub(apiKey);
       sendJson(response, 200, result);
       return true;
@@ -267,7 +331,8 @@ export async function handleCollectorRequest(request, response, url) {
       const body = await readJsonBody(request);
       const platform = normalizePlatform(body.platform);
       const keyword = String(body.keyword || "").trim();
-      const apiKey = String(body.apiKey || "").trim();
+      const candidateKey = String(body.apiKey || "").trim();
+      const apiKey = effectiveTikHubKey(candidateKey);
       const limit = Math.min(Math.max(Number(body.limit) || 20, 1), 50);
       const demo = Boolean(body.demo);
 
@@ -275,6 +340,8 @@ export async function handleCollectorRequest(request, response, url) {
         sendJson(response, 400, { error: "搜索关键词不能为空" });
         return true;
       }
+
+      if (!demo && !enforceSharedRateLimit(request, response, !candidateKey && Boolean(apiKey))) return true;
 
       const result = await searchTikHub({
         apiKey,
@@ -289,7 +356,8 @@ export async function handleCollectorRequest(request, response, url) {
 
     if (request.method === "POST" && url.pathname === "/api/collector/resolve") {
       const body = await readJsonBody(request);
-      const apiKey = String(body.apiKey || "").trim();
+      const candidateKey = String(body.apiKey || "").trim();
+      const apiKey = effectiveTikHubKey(candidateKey);
       const text = String(body.text || "").trim();
 
       if (!text) {
@@ -297,13 +365,17 @@ export async function handleCollectorRequest(request, response, url) {
         return true;
       }
 
+      if (!enforceSharedRateLimit(request, response, !candidateKey && Boolean(apiKey))) return true;
+
       const result = await resolveShareLink({ apiKey, text });
       sendJson(response, 200, result);
       return true;
     }
 
     if (request.method === "GET" && url.pathname === "/api/collector/video") {
-      const apiKey = String(url.searchParams.get("key") || "").trim();
+      const candidateKey = String(url.searchParams.get("key") || "").trim();
+      const apiKey = effectiveTikHubKey(candidateKey);
+      if (!enforceSharedRateLimit(request, response, !candidateKey && Boolean(apiKey))) return true;
       const platform = normalizePlatform(url.searchParams.get("platform"));
       const result = await getTikHubVideo({
         apiKey,

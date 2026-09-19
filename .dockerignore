@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.env.*
+node_modules
+dist
+work
+collector/MediaCrawler
+**/.venv
+**/__pycache__
+**/*.pyc
+*.log
+*.zip

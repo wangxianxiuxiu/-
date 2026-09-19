@@ -4,6 +4,7 @@ dist/
 *.log
 .env
 .env.*
+!/.env.example
 
 # Python and MediaCrawler runtime data
 .venv/
