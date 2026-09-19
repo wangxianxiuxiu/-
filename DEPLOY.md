@@ -1,16 +1,17 @@
 # 部署指南
 
-推荐使用 Render Docker Web Service 部署。项目包含 Node 后端，不能只部署到 GitHub Pages。
+推荐使用 Railway Docker 部署。项目包含 Node 后端，不能只部署到 GitHub Pages。
 
-## Render 部署
+## Railway 部署
 
-1. 登录 Render，选择 `New > Blueprint`。
-2. 连接 GitHub 仓库：
+1. 登录 Railway，选择 `New Project > Deploy from GitHub repo`。
+2. 选择 GitHub 仓库：
    `https://github.com/wangxianxiuxiu/-`
-3. Render 会读取仓库根目录的 `render.yaml`。
-4. 在环境变量中填写 `TIKHUB_API_KEY`。
-5. 点击部署，等待服务状态变为 `Live`。
-6. Render 会生成一个 `https://...onrender.com` 公网地址。
+3. Railway 会读取仓库根目录的 `railway.json` 和 `Dockerfile`。
+4. 在 `Variables` 中新增 `TIKHUB_API_KEY`。
+5. 根据需要设置 `TIKHUB_RATE_LIMIT_MAX` 和 `TIKHUB_RATE_LIMIT_WINDOW_MS`。
+6. 在 `Settings > Networking > Public Networking` 中生成公网域名。
+7. Railway 会输出一个 `https://...up.railway.app` 地址。
 
 ## 共享 Key 模式
 
@@ -32,7 +33,7 @@
 | `TIKHUB_RATE_LIMIT_MAX` | 单个 IP 在时间窗口内的最大请求数 |
 | `TIKHUB_RATE_LIMIT_WINDOW_MS` | 限流时间窗口，单位毫秒 |
 | `HOST` | 部署环境设置为 `0.0.0.0` |
-| `PORT` | Render 自动提供，无需手工设置 |
+| `PORT` | Railway 自动提供，无需手工设置 |
 
 ## 本地验证 Docker
 
