@@ -1,0 +1,30 @@
+# Runtime environments
+node_modules/
+dist/
+*.log
+.env
+.env.*
+
+# Python and MediaCrawler runtime data
+.venv/
+**/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+collector/MediaCrawler/browser_data/
+collector/MediaCrawler/data/
+collector/MediaCrawler/logs/
+collector/MediaCrawler/.uv-cache/
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Archives and temporary files
+*.zip
+*.tmp
+*.temp
